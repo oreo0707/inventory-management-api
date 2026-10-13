@@ -1,4 +1,4 @@
-import { products } from "@/lib/products";
+import pool from "@/lib/db";
 
 export async function GET(
   request: Request,
@@ -8,18 +8,35 @@ export async function GET(
 
   const productId = Number(id);
 
-  const product = products.find(
-    (p) => p.id === productId
-  );
-
-  if (!product) {
+  if (!Number.isSafeInteger(productId) || productId <= 0) {
     return Response.json(
-      { error: "Product not found" },
-      { status: 404 }
+      { error: "Invalid product ID" },
+      { status: 400 }
     );
   }
 
-  return Response.json(product);
+  try {
+    const result = await pool.query(
+      "SELECT id, name, price FROM products WHERE id = $1",
+      [productId]
+    );
+
+    if (result.rows.length === 0) {
+      return Response.json(
+        { error: "Product not found" },
+        { status: 404 }
+      );
+    }
+
+    return Response.json(result.rows[0], { status: 200 });
+  } catch (error) {
+    console.error("Failed to retrieve product:", error);
+
+    return Response.json(
+      { error: "Failed to retrieve product" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PATCH(
@@ -27,15 +44,12 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
+  const productId = Number(id);
 
-  const product = products.find(
-    (p) => p.id === Number(id)
-  );
-
-  if (!product) {
+  if (!Number.isSafeInteger(productId) || productId <= 0) {
     return Response.json(
-      { error: "Product not found" },
-      { status: 404 }
+      { error: "Invalid product ID" },
+      { status: 400 }
     );
   }
 
@@ -64,11 +78,31 @@ export async function PATCH(
     );
   }
 
-  product.price = body.price;
+  try {
+    const result = await pool.query(
+      `UPDATE products
+       SET price = $1
+       WHERE id = $2
+       RETURNING id, name, price`,
+      [body.price, productId]
+    );
 
-  return Response.json(product, {
-    status: 200,
-  });
+    if (result.rows.length === 0) {
+      return Response.json(
+        { error: "Product not found" },
+        { status: 404 }
+      );
+    }
+
+    return Response.json(result.rows[0], { status: 200 });
+  } catch (error) {
+    console.error("Failed to update product:", error);
+
+    return Response.json(
+      { error: "Failed to update product" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function DELETE(
@@ -76,24 +110,43 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
-
   const productId = Number(id);
 
-  const productIndex = products.findIndex(
-    (p) => p.id === productId
-  );
-
-  if (productIndex === -1) {
+  if (!Number.isSafeInteger(productId) || productId <= 0) {
     return Response.json(
-      { error: "Product not found" },
-      { status: 404 }
+      { error: "Invalid product ID" },
+      { status: 400 }
     );
   }
 
-  const deletedProduct = products.splice(productIndex, 1)[0];
+  try {
+    const result = await pool.query(
+      `DELETE FROM products
+       WHERE id = $1
+       RETURNING id, name, price`,
+      [productId]
+    );
 
-  return Response.json({
-    message: "Product deleted successfully",
-    product: deletedProduct,
-  });
+    if (result.rows.length === 0) {
+      return Response.json(
+        { error: "Product not found" },
+        { status: 404 }
+      );
+    }
+
+    return Response.json(
+      {
+        message: "Product deleted successfully",
+        product: result.rows[0],
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Failed to delete product:", error);
+
+    return Response.json(
+      { error: "Failed to delete product" },
+      { status: 500 }
+    );
+  }
 }

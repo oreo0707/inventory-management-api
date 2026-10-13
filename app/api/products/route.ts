@@ -1,9 +1,21 @@
-import { products } from "@/lib/products";
+import pool from "@/lib/db";
 
 export async function GET() {
-  return Response.json(products);
-}
+  try {
+    const result = await pool.query(
+      "SELECT id, name, price FROM products ORDER BY id"
+    );
 
+    return Response.json(result.rows, { status: 200 });
+  } catch (error) {
+    console.error("Failed to retrieve products:", error);
+
+    return Response.json(
+      { error: "Failed to retrieve products" },
+      { status: 500 }
+    );
+  }
+}
 export async function POST(request: Request) {
   let body;
 
@@ -17,7 +29,10 @@ export async function POST(request: Request) {
   }
 
   if (
-    typeof body?.name !== "string" ||
+    body === null ||
+    typeof body !== "object" ||
+    Array.isArray(body) ||
+    typeof body.name !== "string" ||
     body.name.trim() === "" ||
     typeof body.price !== "number" ||
     !Number.isFinite(body.price) ||
@@ -29,18 +44,21 @@ export async function POST(request: Request) {
     );
   }
 
-  const nextId =
-    Math.max(0, ...products.map((product) => product.id)) + 1;
+  try {
+    const result = await pool.query(
+      `INSERT INTO products (name, price)
+       VALUES ($1, $2)
+       RETURNING id, name, price`,
+      [body.name.trim(), body.price]
+    );
 
-  const newProduct = {
-    id: nextId,
-    name: body.name,
-    price: body.price,
-  };
+    return Response.json(result.rows[0], { status: 201 });
+  } catch (error) {
+    console.error("Failed to create product:", error);
 
-  products.push(newProduct);
-
-  return Response.json(newProduct, {
-    status: 201,
-  });
+    return Response.json(
+      { error: "Failed to create product" },
+      { status: 500 }
+    );
+  }
 }
