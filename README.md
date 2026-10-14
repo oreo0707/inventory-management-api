@@ -25,7 +25,90 @@ The project demonstrates backend development fundamentals, including CRUD operat
 - Check database connectivity through a health-check endpoint
 
 ## API Endpoints
+## Customer & Order Management (v0.3.0)
 
+The API supports relational customer and order management using PostgreSQL.
+
+### Database Tables
+
+- `products` — stores product information and current prices.
+- `customers` — stores customer names and unique email addresses.
+- `orders` — stores orders associated with customers.
+- `order_items` — stores products, quantities, and historical unit prices for each order.
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/customers` | Retrieve all customers |
+| POST | `/api/customers` | Create a customer |
+| GET | `/api/orders` | Retrieve orders with customer information, purchased items, and totals |
+| POST | `/api/orders` | Create an order with one or more products |
+
+The existing product CRUD endpoints remain available.
+
+### Create a Customer
+
+**POST `/api/customers`**
+
+```json
+{
+  "name": "Sarah",
+  "email": "sarah@example.com"
+}
+```
+
+A successful request returns `201 Created`.
+
+Duplicate email addresses return `409 Conflict`. Invalid request data returns `400 Bad Request`.
+
+### Create an Order
+
+**POST `/api/orders`**
+
+```json
+{
+  "customer_id": 2,
+  "items": [
+    {
+      "product_id": 1,
+      "quantity": 1
+    },
+    {
+      "product_id": 2,
+      "quantity": 2
+    }
+  ]
+}
+```
+
+Replace the IDs with existing customer and product IDs.
+
+The backend retrieves current product prices directly from PostgreSQL and stores them as historical unit-price snapshots in `order_items`.
+
+Order creation uses a PostgreSQL transaction to ensure that the order and all its items are committed together or rolled back together.
+
+### Retrieve Orders
+
+**GET `/api/orders`**
+
+Returns orders with nested customer information, purchased products, quantities, historical unit prices, subtotals, and calculated order totals.
+
+Monetary values returned from PostgreSQL `NUMERIC` columns are represented as strings to preserve decimal precision.
+
+### Data Integrity
+
+The database enforces primary keys, foreign keys, uniqueness constraints, and positive-value checks.
+
+The API also validates incoming requests and returns appropriate HTTP error responses.
+
+### Current Limitations
+
+- Stock quantities and inventory deduction are not implemented.
+- Authentication and authorization are not implemented.
+- Idempotency protection for repeated order submissions is not implemented.
+- Payment processing is not implemented.
+- Automated API tests and database migrations are planned for later milestones.
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/api/products` | Retrieve all products |
