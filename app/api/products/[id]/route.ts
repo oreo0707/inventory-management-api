@@ -1,3 +1,4 @@
+
 import pool from "@/lib/db";
 
 export async function GET(
@@ -17,7 +18,9 @@ export async function GET(
 
   try {
     const result = await pool.query(
-      "SELECT id, name, price FROM products WHERE id = $1",
+      `SELECT id, name, price, stock_quantity
+       FROM products
+       WHERE id = $1`,
       [productId]
     );
 
@@ -83,7 +86,7 @@ export async function PATCH(
       `UPDATE products
        SET price = $1
        WHERE id = $2
-       RETURNING id, name, price`,
+       RETURNING id, name, price, stock_quantity`,
       [body.price, productId]
     );
 
@@ -123,7 +126,7 @@ export async function DELETE(
     const result = await pool.query(
       `DELETE FROM products
        WHERE id = $1
-       RETURNING id, name, price`,
+       RETURNING id, name, price, stock_quantity`,
       [productId]
     );
 

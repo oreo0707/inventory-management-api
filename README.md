@@ -1,51 +1,261 @@
 # Inventory Management API
 
-A RESTful backend API built with **Next.js, TypeScript, and PostgreSQL** for managing product inventory.
+A RESTful backend API built with **Next.js 16, TypeScript, and PostgreSQL** for managing products, customers, orders, and inventory.
 
-The project demonstrates backend development fundamentals, including CRUD operations, relational database integration, request validation, parameterized SQL queries, and HTTP error handling.
+This project demonstrates backend development concepts including CRUD operations, relational database design, request validation, parameterized SQL queries, database transactions, row-level locking, concurrency control, and database migrations.
+
+**Current Version:** v0.4.0 (Stock Management)
 
 ## Tech Stack
 
-- **Next.js 16** — API routes using the App Router
-- **TypeScript** — Type-safe application development
-- **PostgreSQL** — Relational database
-- **node-postgres (`pg`)** — Database connection pooling and SQL queries
-- **Postman** — Manual API testing
+- **Next.js 16** - REST API development using App Router route handlers
+- **TypeScript** - Type-safe backend development
+- **PostgreSQL** - Relational database and transactional data storage
+- **node-postgres (`pg`)** - PostgreSQL connection pooling and parameterized SQL queries
+- **tsx** - Execute TypeScript database migration scripts
+- **Postman** - Manual API and regression testing
 
 ## Features
 
-- Create products
-- Retrieve all products
-- Retrieve individual products by ID
+### Product Management
+
+- Create, retrieve, update, and delete products
 - Update product prices
-- Delete products
-- Validate incoming requests
-- Return appropriate HTTP status codes
-- Store product data persistently in PostgreSQL
-- Check database connectivity through a health-check endpoint
+- Track available inventory quantities
+- Restock products and deduct inventory
+- Prevent inventory quantities from becoming negative
+- Validate requests and return appropriate HTTP status codes
+
+### Customer Management
+
+- Create customers
+- Retrieve existing customers
+- Enforce unique customer email addresses
+
+### Order Management
+
+- Create orders containing one or more products
+- Associate orders with existing customers
+- Retrieve orders with purchased items and calculated totals
+- Preserve historical product prices using unit-price snapshots
+- Automatically deduct inventory when an order is created
+- Reject orders with insufficient stock
+- Use PostgreSQL transactions to prevent partial order creation
+- Use row-level locking to protect inventory during concurrent purchases
+
+### Database Management
+
+- PostgreSQL relational schema with primary keys, foreign keys, and constraints
+- Versioned SQL migration files
+- TypeScript migration runner
+- Migration history tracking
+- Transactional migration execution
+- Advisory locking to prevent concurrent migration execution
 
 ## API Endpoints
-## Customer & Order Management (v0.3.0)
 
-The API supports relational customer and order management using PostgreSQL.
+### Products
 
-### Database Tables
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/products` | Retrieve all products |
+| POST | `/api/products` | Create a product |
+| GET | `/api/products/:id` | Retrieve a product by ID |
+| PATCH | `/api/products/:id` | Update a product's price |
+| DELETE | `/api/products/:id` | Delete a product |
+| PATCH | `/api/products/:id/stock` | Adjust product inventory |
 
-- `products` — stores product information and current prices.
-- `customers` — stores customer names and unique email addresses.
-- `orders` — stores orders associated with customers.
-- `order_items` — stores products, quantities, and historical unit prices for each order.
-
-### API Endpoints
+### Customers
 
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/api/customers` | Retrieve all customers |
 | POST | `/api/customers` | Create a customer |
-| GET | `/api/orders` | Retrieve orders with customer information, purchased items, and totals |
-| POST | `/api/orders` | Create an order with one or more products |
 
-The existing product CRUD endpoints remain available.
+### Orders
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/orders` | Retrieve orders and their items |
+| POST | `/api/orders` | Create an order and deduct inventory |
+
+### Health Check
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/health/db` | Check PostgreSQL connectivity |
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js (a version compatible with Next.js 16)
+- npm
+- PostgreSQL
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/oreo0707/inventory-management-api.git
+cd inventory-management-api
+```
+
+### 2. Install Dependencies
+
+```bash
+npm install
+```
+
+### 3. Create the Database
+
+Connect to PostgreSQL and execute:
+
+```sql
+CREATE DATABASE inventory_db;
+```
+
+Connect to the new database:
+
+```sql
+\c inventory_db
+```
+
+Then execute the baseline schema:
+
+```sql
+\i database/schema.sql
+```
+
+The `\i` command requires a path accessible from the current `psql` working directory. An absolute path can also be used.
+
+The baseline schema creates the application tables, inventory constraints, and migration history required for a fresh database.
+
+### 4. Configure Environment Variables
+
+Copy `.env.example` to `.env.local`.
+
+Example:
+
+```dotenv
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=inventory_db
+DB_USER=postgres
+DB_PASSWORD=your_local_postgres_password
+```
+
+Replace the placeholder password with your PostgreSQL credentials.
+
+**Security:** Never commit `.env.local` to GitHub. For production environments, use a dedicated database account with appropriate permissions.
+
+### 5. Check Database Migrations
+
+Check migration status:
+
+```bash
+node --env-file=.env.local --import tsx scripts/migrate.ts status
+```
+
+Apply pending migrations:
+
+```bash
+node --env-file=.env.local --import tsx scripts/migrate.ts migrate
+```
+
+The migration runner records applied migrations in the `schema_migrations` table and skips migrations that have already been applied.
+
+For an existing database created before v0.4.0, apply the pending migrations rather than recreating the database.
+
+### 6. Start the Development Server
+
+```bash
+npm run dev
+```
+
+The API is available at:
+
+`http://localhost:3000`
+
+## Example API Requests
+
+### Create a Product
+
+**POST `/api/products`**
+
+```json
+{
+  "name": "Keyboard",
+  "price": 50
+}
+```
+
+Example response (`201 Created`):
+
+```json
+{
+  "id": 1,
+  "name": "Keyboard",
+  "price": "50.00",
+  "stock_quantity": 0
+}
+```
+
+New products start with zero inventory by default.
+
+### Retrieve Products
+
+**GET `/api/products`**
+
+Example response:
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Keyboard",
+    "price": "50.00",
+    "stock_quantity": 10
+  }
+]
+```
+
+### Update a Product's Price
+
+**PATCH `/api/products/1`**
+
+```json
+{
+  "price": 65
+}
+```
+
+This updates the product price without changing its inventory quantity.
+
+### Adjust Inventory
+
+**PATCH `/api/products/1/stock`**
+
+Restock 10 units:
+
+```json
+{
+  "adjustment": 10
+}
+```
+
+Deduct 3 units:
+
+```json
+{
+  "adjustment": -3
+}
+```
+
+The adjustment must be a nonzero integer.
+
+The API uses a conditional SQL update to prevent negative stock quantities and integer overflow.
+
+Insufficient stock returns `409 Conflict`.
 
 ### Create a Customer
 
@@ -60,7 +270,7 @@ The existing product CRUD endpoints remain available.
 
 A successful request returns `201 Created`.
 
-Duplicate email addresses return `409 Conflict`. Invalid request data returns `400 Bad Request`.
+Duplicate email addresses return `409 Conflict`, while invalid request data returns `400 Bad Request`.
 
 ### Create an Order
 
@@ -68,187 +278,129 @@ Duplicate email addresses return `409 Conflict`. Invalid request data returns `4
 
 ```json
 {
-  "customer_id": 2,
+  "customer_id": 1,
   "items": [
     {
       "product_id": 1,
-      "quantity": 1
-    },
-    {
-      "product_id": 2,
       "quantity": 2
     }
   ]
 }
 ```
 
-Replace the IDs with existing customer and product IDs.
+The customer and product must already exist, and the product must have sufficient inventory.
 
-The backend retrieves current product prices directly from PostgreSQL and stores them as historical unit-price snapshots in `order_items`.
+When an order is submitted, the API:
 
-Order creation uses a PostgreSQL transaction to ensure that the order and all its items are committed together or rolled back together.
+1. Validates the incoming request.
+2. Starts a PostgreSQL transaction.
+3. Verifies that the customer exists.
+4. Locks the relevant product rows using `SELECT ... FOR UPDATE`.
+5. Checks available inventory and retrieves current product prices.
+6. Creates the order and its items.
+7. Deducts the purchased quantities from inventory.
+8. Commits the transaction if all operations succeed.
+
+If an operation fails, the transaction is rolled back.
+
+The order items store historical unit-price snapshots, so subsequent changes to product prices do not alter previous purchases.
 
 ### Retrieve Orders
 
 **GET `/api/orders`**
 
-Returns orders with nested customer information, purchased products, quantities, historical unit prices, subtotals, and calculated order totals.
+Returns orders with associated customer information, purchased products, quantities, historical unit prices, and calculated totals.
 
-Monetary values returned from PostgreSQL `NUMERIC` columns are represented as strings to preserve decimal precision.
+PostgreSQL `NUMERIC` monetary values are represented as strings to preserve decimal precision.
 
-### Data Integrity
+## Inventory Concurrency Protection
 
-The database enforces primary keys, foreign keys, uniqueness constraints, and positive-value checks.
+Concurrent purchases can cause overselling if multiple requests read the same inventory quantity without proper coordination.
 
-The API also validates incoming requests and returns appropriate HTTP error responses.
+This API protects inventory through:
 
-### Current Limitations
+- PostgreSQL transactions
+- Row-level locking with `SELECT ... FOR UPDATE`
+- Conditional inventory deduction
+- Database constraints preventing negative stock
+- Rollback when an order cannot be completed
 
-- Stock quantities and inventory deduction are not implemented.
-- Authentication and authorization are not implemented.
-- Idempotency protection for repeated order submissions is not implemented.
-- Payment processing is not implemented.
-- Automated API tests and database migrations are planned for later milestones.
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/products` | Retrieve all products |
-| POST | `/api/products` | Create a product |
-| GET | `/api/products/:id` | Retrieve a product by ID |
-| PATCH | `/api/products/:id` | Update a product's price |
-| DELETE | `/api/products/:id` | Delete a product |
-| GET | `/api/health/db` | Check database connectivity |
+For example, if only four units are available and two customers simultaneously attempt to purchase three units each, only one order can succeed.
 
-## Getting Started
+The other request is rejected with `409 Conflict` because insufficient inventory remains.
 
-### Prerequisites
+## Database Migrations
 
-- Node.js
-- npm
-- PostgreSQL
+Migration files are stored in:
 
-### 1. Clone the repository
+`database/migrations/`
 
-```bash
-git clone https://github.com/oreo0707/inventory-management-api.git
-cd inventory-management-api
-```
+The migration runner is located at:
 
-### 2. Install dependencies
+`scripts/migrate.ts`
 
-```bash
-npm install
-```
+The `schema_migrations` table tracks applied migration versions.
 
-### 3. Create the database
+Migration execution uses transactions and PostgreSQL advisory locking to support consistent migration execution.
 
-Connect to PostgreSQL and run:
+The initial stock migration is:
 
-```sql
-CREATE DATABASE inventory_db;
-```
+`001_add_product_stock.sql`
 
-Then connect to the new database and execute the SQL in `database/schema.sql`.
-
-Using `psql`:
-
-```sql
-\c inventory_db
-\i database/schema.sql
-```
-
-The `\i` command requires a valid path relative to the current working directory. You can also provide the full path to the schema file.
-
-### 4. Configure environment variables
-
-Copy `.env.example` to `.env.local`.
-
-```dotenv
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=inventory_db
-DB_USER=postgres
-DB_PASSWORD=your_local_postgres_password
-```
-
-Replace the placeholder password with your own PostgreSQL credentials.
-
-Never commit `.env.local` to GitHub.
-
-The `postgres` account is used here for local development. A dedicated, least-privilege database account is recommended for deployment.
-
-### 5. Start the development server
-
-```bash
-npm run dev
-```
-
-The API is available at:
-
-`http://localhost:3000`
-
-## Example Requests
-
-### Create a Product
-
-**POST** `/api/products`
-
-```json
-{
-  "name": "Keyboard",
-  "price": 50
-}
-```
-
-Example response — `201 Created`:
-
-```json
-{
-  "id": 1,
-  "name": "Keyboard",
-  "price": "50.00"
-}
-```
-
-### Retrieve All Products
-
-**GET** `/api/products`
-
-Example response:
-
-```json
-[
-  {
-    "id": 1,
-    "name": "Keyboard",
-    "price": "50.00"
-  }
-]
-```
-
-### Update a Product's Price
-
-**PATCH** `/api/products/1`
-
-```json
-{
-  "price": 65
-}
-```
-
-### Delete a Product
-
-**DELETE** `/api/products/1`
-
-Returns the deleted product and a success message.
+It adds the `stock_quantity` column and a constraint preventing negative inventory values.
 
 ## Testing
 
-API endpoints can be tested using Postman.
+The API has been manually tested using Postman, PowerShell, and PostgreSQL SQL Shell.
 
-Create a collection called `Inventory Management API` and add requests for the supported endpoints.
+Completed test scenarios include:
 
-## Current Scope
+- Product CRUD operations
+- Customer retrieval and creation
+- Order creation and retrieval
+- Invalid request validation
+- Insufficient inventory rejection
+- Inventory restocking and deduction
+- Inventory integer overflow protection
+- Transaction rollback
+- PostgreSQL row-level locking
+- Concurrent HTTP order submissions
+- Database migration execution and rollback
+- Regression testing of existing API functionality
 
-Version `v0.2.0` provides PostgreSQL-backed product CRUD functionality.
+Concurrency testing verified that two competing requests could not both purchase inventory beyond the available quantity.
 
-Future development is planned to include customer management, order processing
+Automated API and integration tests are not yet implemented.
+
+TypeScript validation:
+
+```bash
+npx tsc --noEmit
+```
+
+## Current Limitations
+
+- Authentication and authorization are not implemented.
+- Idempotency protection for repeated order submissions is not implemented.
+- Payment processing is not implemented.
+- Automated API and integration tests are not yet implemented.
+- Product deletion may fail when a product is referenced by existing orders; this currently requires improved foreign-key error handling.
+
+## Version History
+
+| Version | Features |
+|---|---|
+| v0.1.0 | Initial in-memory product CRUD API |
+| v0.2.0 | PostgreSQL integration and persistent product CRUD |
+| v0.3.0 | Customer and order management with relational database transactions |
+| v0.4.0 | Stock management, automatic inventory deduction, concurrency protection, and database migrations |
+
+## Future Improvements
+
+- Authentication and role-based authorization
+- Automated integration and regression testing
+- Order cancellation and inventory restoration
+- Idempotent order creation
+- Improved database error handling
+- API documentation using OpenAPI/Swagger
+- Deployment and production configuration

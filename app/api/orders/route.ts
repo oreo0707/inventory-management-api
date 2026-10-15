@@ -126,9 +126,10 @@ type CreateOrderItem = {
   quantity: number;
 };
 
-type ProductPriceRow = {
+type ProductStockRow = {
   id: number;
   price: string;
+  stock_quantity: number;
 };
 
 type CreatedOrderRow = {
@@ -201,7 +202,8 @@ export async function POST(request: Request) {
       item.product_id <= 0 ||
       typeof item.quantity !== "number" ||
       !Number.isSafeInteger(item.quantity) ||
-      item.quantity <= 0
+      item.quantity <= 0 ||
+      item.quantity > 2147483647
     ) {
       return Response.json(
         { error: "Invalid product ID or quantity" },
@@ -224,6 +226,11 @@ export async function POST(request: Request) {
     });
   }
 
+  // All orders acquire product locks in ascending ID order.
+  const sortedItems = [...items].sort(
+    (a, b) => a.product_id - b.product_id
+  );
+
   const client = await pool.connect().catch((error) => {
     console.error("Database connection failed:", error);
     return null;
@@ -239,7 +246,6 @@ export async function POST(request: Request) {
   try {
     await client.query("BEGIN");
 
-    // Verify the customer exists.
     const customerResult = await client.query(
       "SELECT id FROM customers WHERE id = $1",
       [customerId]
@@ -254,28 +260,44 @@ export async function POST(request: Request) {
       );
     }
 
-    // Fetch current product prices from PostgreSQL.
-    const productResult = await client.query<ProductPriceRow>(
-      `SELECT id, price
-       FROM products
-       WHERE id = ANY($1::integer[])
-       FOR SHARE`,
-      [Array.from(productIds)]
-    );
-
-    if (productResult.rows.length !== items.length) {
-      await client.query("ROLLBACK");
-
-      return Response.json(
-        { error: "One or more products were not found" },
-        { status: 404 }
-      );
-    }
-
     const priceMap = new Map<number, string>();
 
-    for (const product of productResult.rows) {
-      priceMap.set(product.id, product.price);
+    // Lock and check products one by one in a consistent order.
+    for (const item of sortedItems) {
+      const productResult = await client.query<ProductStockRow>(
+        `SELECT id, price, stock_quantity
+         FROM products
+         WHERE id = $1
+         FOR UPDATE`,
+        [item.product_id]
+      );
+
+      if (productResult.rows.length === 0) {
+        await client.query("ROLLBACK");
+
+        return Response.json(
+          { error: "One or more products were not found" },
+          { status: 404 }
+        );
+      }
+
+      const product = productResult.rows[0];
+
+      if (product.stock_quantity < item.quantity) {
+        await client.query("ROLLBACK");
+
+        return Response.json(
+          {
+            error: "Insufficient stock",
+            product_id: item.product_id,
+            availableStock: product.stock_quantity,
+            requestedQuantity: item.quantity,
+          },
+          { status: 409 }
+        );
+      }
+
+      priceMap.set(item.product_id, product.price);
     }
 
     // Create the order.
@@ -288,12 +310,27 @@ export async function POST(request: Request) {
 
     const order = orderResult.rows[0];
 
-    // Insert order items using trusted database prices.
-    for (const item of items) {
+    for (const item of sortedItems) {
       const unitPrice = priceMap.get(item.product_id);
 
       if (unitPrice === undefined) {
         throw new Error("Product price missing");
+      }
+
+      // Conditional UPDATE is a second safeguard against overselling.
+      const stockResult = await client.query(
+        `UPDATE products
+         SET stock_quantity = stock_quantity - $1
+         WHERE id = $2
+           AND stock_quantity >= $1
+         RETURNING id`,
+        [item.quantity, item.product_id]
+      );
+
+      if (stockResult.rowCount !== 1) {
+        throw new Error(
+          `Stock deduction failed for product ${item.product_id}`
+        );
       }
 
       await client.query(
