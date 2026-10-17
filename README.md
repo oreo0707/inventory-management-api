@@ -128,6 +128,327 @@ Then execute the baseline schema:
 
 The `\i` command requires a path accessible from the current `psql` working directory. An absolute path can also be used.
 
+# Inventory Management API
+
+A RESTful backend API built with **Next.js 16, TypeScript, and PostgreSQL**, designed to manage products, customers, orders, and inventory while maintaining data consistency during concurrent operations.
+
+This project explores backend engineering concepts beyond basic CRUD, including **database transactions, concurrency control, row-level locking, atomic stock updates, and database migrations**.
+
+**Current Version:** `v0.4.0` | **Status:** Local development project
+
+## Key Features
+
+- **Inventory Management** — Track stock quantities, restock products, and prevent negative inventory.
+- **Transactional Order Processing** — Create orders and deduct inventory within a single PostgreSQL transaction.
+- **Concurrency Protection** — Prevent overselling when multiple customers purchase the same product simultaneously.
+- **Data Integrity** — Enforce database constraints and preserve historical product prices in orders.
+- **Database Migrations** — Manage schema changes through versioned SQL migrations and a custom TypeScript migration runner.
+- **RESTful API** — Manage products, customers, and orders with validated requests and appropriate HTTP responses.
+
+## Tech Stack
+
+| Technology | Purpose |
+|---|---|
+| Next.js 16 | REST API development using App Router |
+| TypeScript | Type-safe backend development |
+| PostgreSQL | Relational database and transaction management |
+| node-postgres (`pg`) | Database connection pooling and SQL queries |
+| tsx | Running TypeScript migration scripts |
+| Postman | API testing and debugging |
+| Git & GitHub | Version control and release management |
+
+## System Architecture
+
+```text
+              API Client
+                |
+                v
+        Next.js API Routes
+                |
+                v
+        Request Validation
+                |
+                v
+       Backend SQL Operations
+                |
+                v
+        PostgreSQL Database
+                |
+       +--------+---------+
+       |        |         |
+    Products  Customers  Orders
+                         |
+                      Order Items
+```
+
+The backend communicates directly with PostgreSQL using parameterized SQL queries through `node-postgres`.
+
+Database transactions and constraints help maintain consistency across related operations.
+
+## Technical Highlights
+
+### 1. Transactional Order Processing
+
+Creating an order involves multiple database operations:
+
+1. Validate the customer and requested products.
+2. Start a PostgreSQL transaction.
+3. Lock the relevant product records.
+4. Verify available inventory.
+5. Create the order and its associated items.
+6. Deduct the purchased quantities from inventory.
+7. Commit the transaction.
+
+If an operation fails, the transaction is rolled back to prevent incomplete orders or inconsistent inventory.
+
+### 2. Concurrency Control & Overselling Prevention
+
+One of the main engineering challenges explored in this project was preventing overselling during simultaneous purchases.
+
+The implementation combines:
+
+- PostgreSQL transactions
+- Row-level locking with `SELECT ... FOR UPDATE`
+- Conditional inventory updates
+- Database constraints
+- Transaction rollback
+
+**Concurrency Test**
+
+Two customers simultaneously attempted to purchase three units of a product with only four units available.
+
+| Test Result | Outcome |
+|---|---|
+| Initial inventory | 4 units |
+| Customer A requests | 3 units |
+| Customer B requests | 3 units |
+| Successful orders | 1 |
+| Rejected orders | 1 (`409 Conflict`) |
+| Remaining inventory | 1 unit |
+
+**Result:** Only one purchase succeeded. The competing request was rejected without creating an additional order or reducing stock below zero.
+
+This experiment verified the API's ability to maintain inventory consistency under concurrent requests.
+
+### 3. Atomic Inventory Updates
+
+Stock adjustments use conditional SQL updates to ensure inventory quantities remain within valid limits.
+
+The API supports:
+
+- Restocking products
+- Deducting inventory
+- Rejecting insufficient-stock adjustments
+- Preventing integer overflow
+
+Database-level constraints provide an additional layer of protection against invalid stock quantities.
+
+### 4. Database Migration System
+
+Developed a custom migration runner using TypeScript and PostgreSQL.
+
+The system supports:
+
+- Versioned SQL migration files
+- Migration history tracking
+- Transactional migration execution
+- Automatic rollback on failure
+- Advisory locking to prevent concurrent migration execution
+
+Migration files are stored in `database/migrations/`, and the runner is implemented in `scripts/migrate.ts`.
+
+## API Endpoints
+
+### Products
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/products` | Retrieve all products |
+| POST | `/api/products` | Create a product |
+| GET | `/api/products/:id` | Retrieve a product |
+| PATCH | `/api/products/:id` | Update product price |
+| DELETE | `/api/products/:id` | Delete a product |
+| PATCH | `/api/products/:id/stock` | Adjust inventory |
+
+### Customers
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/customers` | Retrieve customers |
+| POST | `/api/customers` | Create a customer |
+
+### Orders
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/orders` | Retrieve orders and order items |
+| POST | `/api/orders` | Create an order and deduct stock |
+
+### Database Health
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/health/db` | Check database connectivity |
+
+## Example: Creating an Order
+
+**POST** `/api/orders`
+
+```json
+{
+  "customer_id": 1,
+  "items": [
+    {
+      "product_id": 1,
+      "quantity": 2
+    }
+  ]
+}
+```
+
+When the order is successfully created, the API stores the purchased items, preserves their unit prices, and deducts the corresponding inventory.
+
+If inventory is insufficient, the request returns `409 Conflict`, and no partial order is committed.
+
+## Testing & Verification
+
+The API has been manually tested using **Postman, PowerShell, and PostgreSQL SQL Shell**.
+
+Testing covered:
+
+- API request validation and error handling
+- Product, customer, and order operations
+- Inventory adjustments and insufficient-stock rejection
+- Transaction rollback
+- Row-level locking
+- Simultaneous HTTP order submissions
+- Migration execution and rollback
+- Regression testing of existing functionality
+
+Additional verification included TypeScript type checking and a successful Next.js production build.
+
+Automated API and integration tests are planned for a future release.
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js compatible with Next.js 16
+- npm
+- PostgreSQL
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/oreo0707/inventory-management-api.git
+cd inventory-management-api
+```
+
+### 2. Install Dependencies
+
+```bash
+npm install
+```
+
+### 3. Create the Database
+
+Connect to PostgreSQL and run:
+
+```sql
+CREATE DATABASE inventory_db;
+```
+
+Connect to the database:
+
+```sql
+\c inventory_db
+```
+
+Load the baseline schema using `psql`:
+
+```sql
+\i database/schema.sql
+```
+
+Use an absolute path if the SQL file is not accessible from the current working directory.
+
+### 4. Configure Environment Variables
+
+Copy `.env.example` to `.env.local` and configure:
+
+```dotenv
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=inventory_db
+DB_USER=postgres
+DB_PASSWORD=your_local_postgres_password
+```
+
+Do not commit `.env.local` or real database credentials.
+
+### 5. Check Database Migrations
+
+```bash
+node --env-file=.env.local --import tsx scripts/migrate.ts status
+```
+
+Apply any pending migrations:
+
+```bash
+node --env-file=.env.local --import tsx scripts/migrate.ts migrate
+```
+
+### 6. Start the Development Server
+
+```bash
+npm run dev
+```
+
+The API will be available at:
+
+`http://localhost:3000`
+
+For example:
+
+`GET http://localhost:3000/api/products`
+
+## Project Status & Limitations
+
+This is a **locally developed backend learning project**, not a deployed production service.
+
+Current limitations include:
+
+- No authentication or authorization
+- No automated integration test suite
+- No idempotency protection for repeated order submissions
+- No payment processing
+- Limited handling of product deletion when referenced by existing orders
+
+These are documented areas for future development.
+
+## Version History
+
+| Version | Milestone |
+|---|---|
+| v0.1.0 | In-memory product CRUD API |
+| v0.2.0 | PostgreSQL integration and persistent data |
+| v0.3.0 | Customer and order management with database transactions |
+| v0.4.0 | Inventory management, concurrency protection, and database migrations |
+
+## Future Improvements
+
+- Automated API and integration testing
+- Authentication and role-based authorization
+- Idempotent order creation
+- Order cancellation and inventory restoration
+- Improved database error handling
+- OpenAPI/Swagger documentation
+- Deployment and production configuration
+
+---
+
+**Project Focus:** Backend API Development · PostgreSQL Transactions · Concurrency Control · Data Integrity · Database Migrations
+
 The baseline schema creates the application tables, inventory constraints, and migration history required for a fresh database.
 
 ### 4. Configure Environment Variables
